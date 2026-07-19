@@ -1,0 +1,36 @@
+# The HarnessFlow dev pack is external tooling — not shipped. Ignore only the pack
+# itself; project-owned .github/ content (workflows, copilot-instructions.md) IS tracked.
+# Runtime dependencies are vendored under context/ (see robot_agentic_training_flow.md).
+.github/HarnessFlow/
+
+# macOS
+.DS_Store
+
+# Python bytecode / packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local environment / secrets
+.env
+.env.*

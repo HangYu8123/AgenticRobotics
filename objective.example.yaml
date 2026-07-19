@@ -1,0 +1,183 @@
+# ============================================================================
+# Objective spec for the `robot_agentic_training_flow` workflow.
+#
+# THIS FILE IS OWNED BY THE OPERATOR, NOT BY THE AGENT.
+#
+# Copy it somewhere outside this repo, fill it in, and pass its path
+# to the workflow. The agent reads it and never writes it. The metric and the exit
+# condition defined here are the only definition of success for the run: the
+# agent may not modify, relax, substitute them, or stop before the exit
+# condition holds.
+#
+# If you want that enforced rather than merely instructed, deny writes to this
+# path at the harness level (a Claude Code `settings.json` permission rule).
+# The workflow's sha256 check is an audit record, not a security boundary.
+# ============================================================================
+
+# Where the loop writes LOOP_LOG.md and its per-round subdirectories.
+# Pin this. Left unset, lerobot-train invents a fresh timestamped directory on
+# every call, and rounds stop accumulating into one run.
+run_dir: outputs/train_loop/pusht_act_001
+
+# ---------------------------------------------------------------------------
+# The exit condition:  <metric_path> <comparison> <target>
+# ---------------------------------------------------------------------------
+
+# Dotted path into the eval_command's eval_info.json.
+#
+# NOTE: the `lerobot-eval` CLI writes aggregate metrics under `overall.<key>`
+# (custom eval commands may use any JSON shape as long as this path exists):
+# pc_success (percent, 0-100), avg_sum_reward, avg_max_reward.
+metric_path: overall.pc_success
+
+comparison: ">="        # one of: >=  >  <=  <     (<= / < mean lower-is-better)
+target: 80.0
+
+# ---------------------------------------------------------------------------
+# The measurement. Run verbatim every round.
+#
+# Contract: this command MUST write {eval_dir}/eval_info.json containing
+# `metric_path`. Anything satisfying that contract is legal — a simulator, a
+# reward model, a script of your own, a human-scored file.
+#
+# The loop validates (never edits) this command before every dispatch — the
+# [command preflight]: only the two placeholders below; after joining the
+# backslash line continuations, the first token of every logical command must
+# be `uv`, `python`, or listed in allowed_executables; no `;`, backticks,
+# `$(...)`, or background `&` anywhere; no redirection outside the run dir.
+# A violation halts the run.
+#
+# Templates substituted by the loop:
+#   {checkpoint}  -> <train_dir>/checkpoints/last/pretrained_model
+#                    (use the `last` symlink; step dirs are zero-padded, e.g. 005000)
+#   {eval_dir}    -> <run_dir>/round_<n>/eval
+#
+# Statistical notes:
+#   - 50 episodes resolve roughly ±11 percentage points (95% interval at 80%
+#     success; Wilson interval ≈ 67–90%) — and a round-to-round delta compares
+#     two such samples, so the loop's default noise band is wider still
+#     (≈ ±16 pp). Deltas inside that band are noise — see min_delta below.
+#     Raise n_episodes to tighten it.
+#   - Fix the evaluator's seed set (e.g. add --seed=100000) so every round
+#     scores the same episode initializations — a paired comparison, which
+#     shrinks the round-to-round variance of the delta. Repeat runs then differ
+#     only by GPU nondeterminism; the loop detects a fully deterministic eval
+#     by its identical confirmation eval and does not over-trust it.
+#
+# Wall-clock notes:
+#   - --eval.batch_size is the number of parallel vectorized envs — the main
+#     eval speed knob (it does not change n_episodes). --eval.use_async_envs
+#     exists, but only =false has been validated on this machine (an async-env
+#     failure forced =false on the PushT run).
+#   - In-training eval (env_eval_freq — renamed from eval_freq in lerobot
+#     v0.6.0) runs only when a sim env config is set; it is not a measurement
+#     shortcut for real-robot data and never a substitute for this command.
+# ---------------------------------------------------------------------------
+eval_command: |
+  uv run lerobot-eval \
+    --policy.path={checkpoint} \
+    --env.type=pusht \
+    --eval.n_episodes=50 \
+    --eval.batch_size=10 \
+    --policy.device=cuda \
+    --output_dir={eval_dir}
+
+# --- Real-robot variant -----------------------------------------------------
+# There is no gym env on real hardware, so there is no env reward and no
+# lerobot-eval. Score recorded episodes with a reward model from
+# src/lerobot/rewards/ (robometer | topreward | sarm | reward_classifier) and have
+# your script write eval_info.json in the same shape.
+# See skills/original/scoring-with-reward-model/SKILL.md.
+#
+# eval_command: |
+#   uv run python scripts/score_episodes.py \
+#     --policy.path={checkpoint} \
+#     --reward-model=robometer \
+#     --episodes=20 \
+#     --output_dir={eval_dir}
+# ----------------------------------------------------------------------------
+
+# Non-improving rounds tolerated before the agent MUST switch strategy class
+# (stop tuning; go diagnose, collect data, or search online).
+stagnation_rounds: 2
+
+# --- Optional fields ---------------------------------------------------------
+
+# Smallest metric improvement that counts as real progress. When set, this
+# REPLACES the loop's computed noise band (a two-sample 95% interval on the
+# delta). Leave unset to let the loop compute the band from each eval's own
+# episode count.
+# NOTE for deterministic evals: with a fixed seed set the confirmation eval is
+# identical by construction, so the loop switches to a paired per-episode test
+# (McNemar / paired bootstrap). If your eval_command's output has NO per-episode
+# results, that path is unavailable too — set min_delta explicitly here.
+# min_delta: 5.0
+
+# Reduced-cost variant of eval_command (e.g. 2 episodes/task), used ONLY for the
+# round-0 preflight's signal-existence and metric-path checks — never for a
+# scored metric. Same {checkpoint}/{eval_dir} placeholders, same eval_info.json
+# contract, same command-preflight rules. It MUST exercise the same measurement
+# code path as eval_command, only smaller; the loop confirms any degenerate
+# probe result with the real eval_command before halting.
+# preflight_eval_command: |
+#   uv run lerobot-eval \
+#     --policy.path={checkpoint} \
+#     --env.type=pusht \
+#     --eval.n_episodes=4 \
+#     --eval.batch_size=4 \
+#     --policy.device=cuda \
+#     --output_dir={eval_dir}
+
+# Working directory every dispatched command runs from — normally the LeRobot
+# repo root, since the commands use `uv run` and relative module paths.
+# Strongly recommended; when unset, the loop records whatever directory it
+# resolved in the run ledger header.
+# workdir: /path/to/lerobot
+
+# Extra executables the command preflight accepts as a command's first token,
+# beyond the defaults `uv` and `python` (e.g. a wrapper script).
+# allowed_executables: [bash]
+
+# --- Three evaluation layers + a locked acceptance gate (optional) -----------
+# The fields above define ONE visible optimization metric (metric_path). Optimizing
+# it round after round eventually overfits the evaluator, seed set, or environment
+# layout without a better policy. Separate the signal the loop selects on from a
+# locked gate it is never allowed to steer toward, across three layers:
+#
+#   smoke      -> `preflight_eval_command` above  (cheap round-0 correctness probe)
+#   selection  -> `eval_command` above            (visible development suite, per round)
+#   acceptance -> `acceptance_eval` + `acceptance:` below
+#                 (locked holdout seeds/perturbations/tasks/envs — NEVER used to pick
+#                  an action between rounds; read only by the acceptance gate)
+#
+# Why a locked holdout matters here: LIBERO-PRO (arxiv.org/abs/2510.03827) reports
+# models scoring >90% on standard LIBERO collapsing to ~0% under object/state/
+# instruction/environment perturbations. On holdout reuse leaking into selection,
+# see Dwork et al. (arxiv.org/abs/1506.02629) and Whiteson et al. (evaluation
+# overfitting in empirical RL). Its perturbation suites and the vla-eval harness
+# (github.com/allenai/vla-evaluation-harness, container-isolated model×benchmark
+# matrix) are external; point `acceptance_eval.eval_command` at whichever you run —
+# this repo references them rather than vendoring their (GPU/container) weight.
+
+# A metric VECTOR the acceptance gate must satisfy — not a single scalar. Each
+# metric is a dotted path into the acceptance eval's eval_info.json.
+# acceptance:
+#   success_rate:          {comparison: ">=", target: 0.80}
+#   unsafe_success_rate:   {comparison: "<=", target: 0.00}
+#   p95_control_latency_ms: {comparison: "<=", target: 100}
+#   prior_task_retention:  {comparison: ">=", target: 0.95}
+
+# The locked holdout evaluation. Same {checkpoint}/{eval_dir} placeholders, same
+# eval_info.json contract, same command-preflight rules as eval_command. Its seeds,
+# perturbations, tasks, and environments are fixed for the life of the run.
+# acceptance_eval:
+#   eval_command: |
+#     uv run python scripts/run_libero_pro.py \
+#       --policy.path={checkpoint} \
+#       --suite=object,state,instruction,environment \
+#       --seed=900000 \
+#       --output_dir={eval_dir}
+#   seeds: [900000, 900001, 900002]
+#   perturbations: [object, state, instruction, environment]
+#   tasks: [libero_pro_holdout]
+#   environments: [libero_pro]

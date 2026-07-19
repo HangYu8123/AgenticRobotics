@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "round_state.schema.json",
+  "title": "Robot Agentic Training Flow decoded round state",
+  "description": "Structural contract for the decoded logical mapping. It does not prescribe or migrate ROUND_IN_PROGRESS.md's on-disk encoding.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "current_round",
+    "next_round",
+    "objective_digest",
+    "score_state",
+    "generation_high_water",
+    "measurement_generation_high_water",
+    "active_waits",
+    "completed_waits",
+    "execution_leases",
+    "phase_transitions",
+    "measurement_attempts",
+    "round_log_inputs"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "type": "string" },
+    "current_round": { "type": "integer", "minimum": 0 },
+    "next_round": { "type": "integer", "minimum": 0 },
+    "objective_digest": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "score_state": { "type": "object", "additionalProperties": true },
+    "generation_high_water": { "type": "integer", "minimum": 0 },
+    "measurement_generation_high_water": { "type": "integer", "minimum": 0 },
+    "active_waits": { "$ref": "#/$defs/waitMap" },
+    "completed_waits": { "$ref": "#/$defs/completedWaitMap" },
+    "execution_leases": { "type": "object", "additionalProperties": true },
+    "phase_transitions": { "type": "object", "additionalProperties": true },
+    "measurement_attempts": { "$ref": "#/$defs/measurementMap" },
+    "round_log_inputs": {
+      "type": "object",
+      "required": ["phase"],
+      "properties": {
+        "phase": {
+          "enum": [
+            "ROUND_START",
+            "EXECUTING",
+            "REMEASURE_ONLY",
+            "READY_TO_SCORE",
+            "SCORE_APPLIED",
+            "REGISTRATION_COMMITTED",
+            "CLEANUP_COMPLETE",
+            "LEDGER_COMMITTED",
+            "ROUND_ADVANCED"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "score_applied": { "type": ["string", "null"] },
+    "registration_committed": { "type": ["string", "null"] },
+    "cleanup": { "anyOf": [{ "$ref": "#/$defs/cleanup" }, { "type": "null" }] },
+    "prepared_ledger_block": {
+      "anyOf": [{ "$ref": "#/$defs/preparedLedgerBlock" }, { "type": "null" }]
+    },
+    "ledger_committed": { "type": ["string", "null"] },
+    "round_advanced": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "waitMap": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+      "additionalProperties": { "$ref": "#/$defs/wait" }
+    },
+    "wait": {
+      "type": "object",
+      "required": ["owner", "status"],
+      "properties": {
+        "owner": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["PREPARED", "WAITING", "CLAIMED"] },
+        "launch_key": { "type": "string" },
+        "event_trigger_key": { "type": "string" },
+        "fallback_trigger_key": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "completedWaitMap": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+      "additionalProperties": { "$ref": "#/$defs/completedWait" }
+    },
+    "completedWait": {
+      "allOf": [
+        { "$ref": "#/$defs/wait" },
+        {
+          "type": "object",
+          "required": ["outcome", "verification"],
+          "properties": {
+            "status": { "const": "CLAIMED" },
+            "outcome": { "type": "string", "minLength": 1 },
+            "verification": {
+              "anyOf": [
+                { "type": "string", "minLength": 1 },
+                { "type": "object", "minProperties": 1 }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "measurementMap": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+      "additionalProperties": { "$ref": "#/$defs/measurement" }
+    },
+    "measurement": {
+      "type": "object",
+      "required": ["wait_generation"],
+      "properties": {
+        "wait_generation": { "type": "integer", "minimum": 1 },
+        "outcome": { "type": "string" },
+        "checkpoint": { "type": "string" },
+        "eval_dir": { "type": "string" },
+        "command": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "cleanup": {
+      "type": "object",
+      "required": ["commit_key", "complete"],
+      "properties": {
+        "commit_key": { "type": "string", "minLength": 1 },
+        "complete": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "preparedLedgerBlock": {
+      "type": "object",
+      "required": [
+        "block",
+        "block_sha256",
+        "byte_length",
+        "pre_append_offset",
+        "pre_append_prefix_sha256"
+      ],
+      "properties": {
+        "block": { "type": "string" },
+        "block_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "byte_length": { "type": "integer", "minimum": 1 },
+        "pre_append_offset": { "type": "integer", "minimum": 0 },
+        "pre_append_prefix_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

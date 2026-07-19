@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Robot Agentic Training Flow — Request Builder</title>
+<!--
+  Robot Agentic Training Flow — Request Builder. A single self-contained static page,
+  mirroring the design of .github/HarnessFlow/harness_gui.html but for the standalone
+  robot_agentic_training_flow.md loop (invoked directly by name — NOT a pack request
+  template, so it is intentionally not swept by sync_gui_templates.py, which only scans
+  .github/HarnessFlow/request_template/).
+
+  WHY: filling in robot_agentic_training_flow_request_template.md by hand is fiddly; this
+  lets you set the flow's headers, state your run requirements, type the objective
+  parameters (schema = objective.example.yaml), then copy the finished prompt AND download
+  the operator-owned objective.yaml in a couple of clicks.
+
+  - No build, no dependencies, no network. Double-click to open (file://).
+  - READ-ONLY against the repo: it writes nothing on disk. "Copy"/"Download" only produce
+    text in your browser / your Downloads folder.
+  - Invariant 1 (the flow's): the objective is operator-owned. This tool never puts the
+    objective's VALUES into the agent prompt — the prompt carries only the objective's PATH.
+    You download objective.yaml, save it yourself, and reference that path. The agent reads
+    the file at that path and never writes it.
+-->
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2127; --muted:#5b6470; --line:#e2e6ea;
+    --accent:#3b5bdb; --accent-ink:#ffffff; --chip:#eef1f6; --chip-on:#3b5bdb;
+    --code-bg:#0f1320; --code-ink:#e6e9f2; --ok:#2b8a3e; --warn:#b08900;
+    --radius:10px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1116; --panel:#171b22; --ink:#e6e9ef; --muted:#9aa4b2; --line:#262c36;
+      --accent:#5c7cff; --chip:#222834; --chip-on:#5c7cff; --code-bg:#0b0e16; --code-ink:#dfe4f0;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 18px 64px}
+  header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-bottom:6px}
+  header.top h1{font-size:22px;margin:0;letter-spacing:.2px}
+  header.top .sub{color:var(--muted);font-size:13px}
+  .badge{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .privacy{color:var(--muted);font-size:12px;margin:2px 0 18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:880px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px}
+  .panel h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:18px 0 8px;font-weight:700}
+  fieldset{border:0;margin:0 0 14px;padding:0}
+  legend{font-size:12px;color:var(--muted);padding:0;margin-bottom:6px;font-weight:600}
+  .seg{display:inline-flex;flex-wrap:wrap;gap:6px}
+  .seg label{position:relative;cursor:pointer}
+  .seg input{position:absolute;opacity:0;width:0;height:0}
+  .seg span{display:inline-block;padding:6px 12px;border:1px solid var(--line);border-radius:8px;
+            background:var(--chip);font-size:13px;font-family:var(--mono)}
+  .seg input:checked + span{background:var(--chip-on);color:var(--accent-ink);border-color:var(--chip-on);font-weight:600}
+  .seg input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+  .reviewrow{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+  .reviewgrp{display:flex;flex-direction:column;gap:6px}
+  .sublegend{font-size:12px;color:var(--muted);font-weight:600}
+  .custom-model{margin-top:8px;display:none}
+  .custom-model.show{display:block}
+  .custom-model input{width:100%;font-family:var(--mono);font-size:13px;padding:7px 9px;
+        border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+  .pathbox{margin-top:6px;background:var(--code-bg);color:var(--code-ink);border-radius:8px;
+        padding:10px 12px;font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .pathbox .lbl{display:block;color:#8b94a7;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  .field .sub{display:block;font-weight:400;color:var(--muted);font-size:11.5px;margin-bottom:4px}
+  .field textarea,.field input[type=text],.field input[type=number],.field select{
+        width:100%;font-family:var(--mono);font-size:13px;padding:8px 10px;border:1px solid var(--line);
+        border-radius:8px;background:var(--bg);color:var(--ink)}
+  .field textarea{min-height:42px;resize:vertical}
+  .field textarea:focus-visible,.field input:focus-visible,.field select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:520px){.row2{grid-template-columns:1fr}}
+  .req{color:var(--accent);font-weight:700}
+  .hint{color:var(--muted);font-size:12px;margin:-4px 0 12px}
+  .preview-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .preview-head h2{margin:0}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  button.act{appearance:none;border:1px solid var(--line);background:var(--chip);color:var(--ink);
+        padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600}
+  button.act.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  button.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  pre.preview{margin:0;background:var(--code-bg);color:var(--code-ink);border-radius:8px;padding:14px;
+        font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-word;max-height:460px;overflow:auto}
+  .note{color:var(--muted);font-size:12px;margin:8px 0 0}
+  .note code{font-family:var(--mono)}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+        background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:13px;
+        opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:9}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  footer.foot{margin-top:24px;color:var(--muted);font-size:12px;text-align:center}
+  footer.foot code{font-family:var(--mono)}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Robot Agentic Training Flow · Request Builder</h1>
+    <span class="sub">Set the headers, state requirements, type the objective — copy the prompt &amp; download the objective.</span>
+    <span class="badge">standalone flow</span>
+  </header>
+  <p class="privacy">Runs entirely in your browser — nothing you type is sent anywhere, and no repo file is
+    modified. <b>Invariant 1:</b> the prompt carries only the objective's <i>path</i>; the objective's values
+    go into the <code>objective.yaml</code> you download and save yourself. The agent reads that file, never writes it.</p>
+
+  <div class="grid">
+    <!-- LEFT: flow parameters -->
+    <section class="panel">
+      <h2>1 · Flow parameters</h2>
+
+      <fieldset>
+        <legend>agent type</legend>
+        <div class="seg" id="seg-agent" role="radiogroup" aria-label="agent type">
+          <label><input type="radio" name="agent" value="claude" checked><span>claude</span></label>
+          <label><input type="radio" name="agent" value="codex"><span>codex</span></label>
+          <label><input type="radio" name="agent" value="copilot"><span>copilot</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>subagent_model</legend>
+        <div class="seg" id="seg-model" role="radiogroup" aria-label="subagent model">
+          <label><input type="radio" name="model" value="inherit" checked><span>inherit</span></label>
+          <label><input type="radio" name="model" value="claude-sonnet-5" data-effort="high"><span>sonnet 5</span></label>
+          <label><input type="radio" name="model" value="claude-sonnet-4-6" data-effort="high"><span>sonnet 4.6</span></label>
+          <label><input type="radio" name="model" value="__custom__"><span>custom id…</span></label>
+        </div>
+        <div class="custom-model" id="customModelWrap">
+          <input id="customModel" type="text" placeholder="e.g. claude-opus-4-8" autocomplete="off" spellcheck="false">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>subagent_effort</legend>
+        <div class="seg" id="seg-effort" role="radiogroup" aria-label="subagent effort">
+          <label><input type="radio" name="effort" value="low"><span>low</span></label>
+          <label><input type="radio" name="effort" value="medium"><span>medium</span></label>
+          <label><input type="radio" name="effort" value="high" checked><span>high</span></label>
+          <label><input type="radio" name="effort" value="xhigh"><span>xhigh</span></label>
+          <label><input type="radio" name="effort" value="max"><span>max</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <!-- Opt-in post-run review headers (only run if a round edits repo source files).
+             false = skip (default); true = Claude Code native /simplify · /code-review;
+             local = the pack's vendored skills (portable). See _lib/review_skills.md. -->
+        <legend>review skills <span style="font-weight:400">(opt-in post-run · default off · <code>true</code> = native, <code>local</code> = pack skill)</span></legend>
+        <div class="reviewrow">
+          <div class="reviewgrp">
+            <div class="sublegend">simplify</div>
+            <div class="seg" id="seg-simplify" role="radiogroup" aria-label="simplify">
+              <label><input type="radio" name="simplify" value="false" checked><span>false</span></label>
+              <label><input type="radio" name="simplify" value="true"><span>true</span></label>
+              <label><input type="radio" name="simplify" value="local"><span>local</span></label>
+            </div>
+          </div>
+          <div class="reviewgrp">
+            <div class="sublegend">code_review</div>
+            <div class="seg" id="seg-codereview" role="radiogroup" aria-label="code_review">
+              <label><input type="radio" name="codereview" value="false" checked><span>false</span></label>
+              <label><input type="radio" name="codereview" value="true"><span>true</span></label>
+              <label><input type="radio" name="codereview" value="local"><span>local</span></label>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="pathbox">
+        <span class="lbl">Flow file this prompt tells the agent to read (per agent type)</span>
+        <span id="resolvedPath"></span>
+      </div>
+
+      <h3>Requirements <span style="font-weight:400;text-transform:none;letter-spacing:0">(operator preflight — not parsed by the controller)</span></h3>
+      <div class="field">
+        <label for="req_hardware">hardware</label>
+        <textarea id="req_hardware" rows="1" placeholder="1× CUDA GPU (≥24 GB), or real robot + host"></textarea>
+      </div>
+      <div class="field">
+        <label for="req_runtime">runtime</label>
+        <textarea id="req_runtime" rows="1" placeholder="LeRobot repo cloned & installed; uv available; matching CUDA toolkit"></textarea>
+      </div>
+      <div class="field">
+        <label for="req_data">data</label>
+        <textarea id="req_data" rows="1" placeholder="dataset recorded/downloaded at <root>; teleop device if collecting"></textarea>
+      </div>
+      <div class="field">
+        <label for="req_storage">storage / other</label>
+        <textarea id="req_storage" rows="1" placeholder="disk for checkpoints & eval videos; network for HuggingFace"></textarea>
+      </div>
+    </section>
+
+    <!-- RIGHT: objective + run -->
+    <section class="panel">
+      <h2>2 · Objective <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(schema = objective.example.yaml)</span></h2>
+      <p class="hint">Fill these in — they become the downloadable <code>objective.yaml</code>. Save that file, then put its
+        path in <b>objective path</b> below; the prompt references only the path (Invariant 1).</p>
+
+      <div class="field">
+        <label for="objective_path"><span class="req">objective path</span> <span class="sub">absolute path where you will save the downloaded objective.yaml</span></label>
+        <input type="text" id="objective_path" placeholder="/abs/path/to/my_objective.yaml">
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="run_dir"><span class="req">run_dir</span></label>
+          <input type="text" id="run_dir">
+        </div>
+        <div class="field">
+          <label for="metric_path"><span class="req">metric_path</span></label>
+          <input type="text" id="metric_path">
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="comparison"><span class="req">comparison</span></label>
+          <select id="comparison">
+            <option value="&gt;=">&gt;=  (higher is better)</option>
+            <option value="&gt;">&gt;   (higher is better)</option>
+            <option value="&lt;=">&lt;=  (lower is better)</option>
+            <option value="&lt;">&lt;   (lower is better)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="target"><span class="req">target</span></label>
+          <input type="number" id="target" step="any">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="eval_command"><span class="req">eval_command</span> <span class="sub">run verbatim every round · {checkpoint} / {eval_dir} placeholders · must write {eval_dir}/eval_info.json containing metric_path</span></label>
+        <textarea id="eval_command" rows="6"></textarea>
+      </div>
+
+      <div class="field" style="max-width:220px">
+        <label for="stagnation_rounds"><span class="req">stagnation_rounds</span></label>
+        <input type="number" id="stagnation_rounds" min="1" step="1">
+      </div>
+
+      <h3>Optional</h3>
+      <div class="row2">
+        <div class="field">
+          <label for="min_delta">min_delta <span class="sub">replaces the computed noise band</span></label>
+          <input type="number" id="min_delta" step="any" placeholder="(unset)">
+        </div>
+        <div class="field">
+          <label for="workdir">workdir <span class="sub">dir every dispatched command runs from</span></label>
+          <input type="text" id="workdir" placeholder="/path/to/lerobot">
+        </div>
+      </div>
+      <div class="field">
+        <label for="preflight_eval_command">preflight_eval_command <span class="sub">reduced-cost eval for the round-0 preflight probe only</span></label>
+        <textarea id="preflight_eval_command" rows="3" placeholder="(unset)"></textarea>
+      </div>
+      <div class="field">
+        <label for="allowed_executables">allowed_executables <span class="sub">extra first tokens the command preflight accepts (comma-separated)</span></label>
+        <input type="text" id="allowed_executables" placeholder="bash">
+      </div>
+
+      <h3>Starting state <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></h3>
+      <div class="field">
+        <label for="starting" class="sub" style="font-weight:400">existing train_dir / checkpoint / dataset notes — round 0 creates the train_dir if blank</label>
+        <textarea id="starting" rows="2" placeholder="(none)"></textarea>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid" style="margin-top:18px">
+    <section class="panel">
+      <div class="preview-head">
+        <h2>3 · Prompt</h2>
+        <div class="btns">
+          <button class="act primary" id="btnCopyPrompt" type="button">Copy</button>
+          <button class="act" id="btnDlPrompt" type="button">Download .md</button>
+        </div>
+      </div>
+      <pre class="preview" id="promptPreview" aria-live="polite"></pre>
+      <p class="note">Paste this to the agent to start the run.</p>
+    </section>
+
+    <section class="panel">
+      <div class="preview-head">
+        <h2>4 · objective.yaml</h2>
+        <div class="btns">
+          <button class="act primary" id="btnDlObjective" type="button">Download objective.yaml</button>
+          <button class="act" id="btnCopyObjective" type="button">Copy</button>
+        </div>
+      </div>
+      <pre class="preview" id="objectivePreview" aria-live="polite"></pre>
+      <p class="note">Save this file, then set <b>objective path</b> above to where you saved it. The flow reads it there and never writes it.</p>
+    </section>
+  </div>
+
+  <footer class="foot">
+    Request builder for <code>robot_agentic_training_flow.md</code> · open by double-click (file://) · nothing is sent anywhere.
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+// Example defaults surface objective.example.yaml's PushT/ACT parameters out of the box.
+var EX = {
+  run_dir: "outputs/train_loop/pusht_act_001",
+  metric_path: "overall.pc_success",
+  comparison: ">=",
+  target: "80.0",
+  stagnation_rounds: "2",
+  eval_command:
+    "uv run lerobot-eval \\\n" +
+    "  --policy.path={checkpoint} \\\n" +
+    "  --env.type=pusht \\\n" +
+    "  --eval.n_episodes=50 \\\n" +
+    "  --eval.batch_size=10 \\\n" +
+    "  --policy.device=cuda \\\n" +
+    "  --output_dir={eval_dir}"
+};
+
+// --- UI state -------------------------------------------------------------
+var state = {
+  params: { agent:"claude", model:"inherit", customModel:"", effort:"high", simplify:"false", code_review:"false" },
+  f: {}   // field id -> string value
+};
+
+// --- YAML helpers (hand-rolled, no library — offline) ---------------------
+// Single-quote every string scalar and double embedded quotes: the one rule that
+// safely covers colons, hashes, brackets, leading dashes, and boolean-looking text.
+function yamlScalar(s){ return "'" + String(s).replace(/'/g, "''") + "'"; }
+// Emit raw when the value parses as a finite number, else quote it defensively.
+// Plain integers/decimals pass through verbatim (covers every realistic input).
+// Exponential notation is normalized to a YAML-1.1-valid float literal — that
+// resolver needs BOTH a decimal point AND a signed exponent (`1e10` and even
+// `1.0e10` parse as strings; only `1.0e+10` parses as a float).
+function yamlNum(v){
+  v = String(v).trim();
+  if(v === "" || !isFinite(Number(v))) return yamlScalar(v);
+  var m = v.match(/^([-+]?)(\d+)(?:\.(\d*))?[eE]([-+]?)(\d+)$/);
+  if(!m) return v;   // plain int/decimal — already YAML-numeric
+  return m[1] + m[2] + "." + (m[3] || "0") + "e" + (m[4] || "+") + m[5];
+}
+// Literal block scalar (`|`). Normalize EVERY non-empty line to a uniform 2-space
+// indent — strip each line's own leading whitespace first — so the block is always
+// valid YAML no matter how the user indented continuation lines (an earlier line more
+// indented than a later one would otherwise drop below the auto-detected base indent
+// and fail to parse). Leading whitespace on a backslash-continued shell command is
+// cosmetic: the joined logical command is byte-identical either way.
+function yamlBlock(key, text){
+  var body = String(text).replace(/\s+$/, "");
+  if(!body.trim()) return key + ": |\n  # TODO: fill in " + key + "\n";
+  var lines = body.split("\n").map(function(l){
+    var t = l.replace(/\s+$/, "");                 // rstrip
+    return t === "" ? "" : "  " + t.replace(/^\s+/, "");   // lstrip, then uniform 2-space indent
+  });
+  return key + ": |\n" + lines.join("\n") + "\n";
+}
+
+function get(id, fallback){
+  var v = state.f[id];
+  if(v === undefined || v === null) v = "";
+  v = v.trim();
+  return v !== "" ? v : (fallback || "");
+}
+
+// --- Builders -------------------------------------------------------------
+function subagentModel(){
+  return state.params.model === "__custom__"
+    ? (state.params.customModel.trim() || "inherit")
+    : state.params.model;
+}
+
+function resolvePath(agent){
+  return agent === "copilot" ? "@/robot_agentic_training_flow.md" : "robot_agentic_training_flow.md";
+}
+
+function buildObjectiveYaml(){
+  var out = [];
+  out.push("# Objective spec for robot_agentic_training_flow.md — generated by the request builder.");
+  out.push("# OPERATOR-OWNED: save this file, then pass its path to the flow.");
+  out.push("# The agent reads it and never writes it. Full schema + docs: objective.example.yaml");
+  out.push("");
+  out.push("run_dir: " + yamlScalar(get("run_dir", EX.run_dir)));
+  out.push("metric_path: " + yamlScalar(get("metric_path", EX.metric_path)));
+  out.push("comparison: " + yamlScalar(get("comparison", EX.comparison)));
+  out.push("target: " + yamlNum(get("target", EX.target)));
+  out.push(yamlBlock("eval_command", get("eval_command", EX.eval_command)).replace(/\n$/, ""));
+  out.push("stagnation_rounds: " + yamlNum(get("stagnation_rounds", EX.stagnation_rounds)));
+
+  var opt = [];
+  if(get("min_delta")) opt.push("min_delta: " + yamlNum(get("min_delta")));
+  if(get("preflight_eval_command")) opt.push(yamlBlock("preflight_eval_command", get("preflight_eval_command")).replace(/\n$/, ""));
+  if(get("workdir")) opt.push("workdir: " + yamlScalar(get("workdir")));
+  if(get("allowed_executables")){
+    var items = get("allowed_executables").split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    if(items.length) opt.push("allowed_executables: [" + items.map(yamlScalar).join(", ") + "]");
+  }
+  if(opt.length){
+    out.push("");
+    out.push("# --- optional ---");
+    out.push.apply(out, opt);
+  }
+  return out.join("\n") + "\n";
+}
+
+function buildPrompt(){
+  var p = state.params;
+  var L = [];
+  L.push("agent type: " + p.agent);
+  L.push("subagent_model: " + subagentModel());
+  L.push("subagent_effort: " + p.effort);
+  L.push("simplify: " + p.simplify);
+  L.push("code_review: " + p.code_review);
+  L.push("");
+  L.push("Read and follow **robot_agentic_training_flow.md** — the standalone *Robot Agentic Training Flow*, invoked directly by name (not through the pack's request-classification table) — in its entirety, then run its controller loop (Steps 0–4) against the objective below until its exit condition holds.");
+  L.push("");
+  L.push("Hard constraints, in priority order (hardest first) —");
+  L.push("1. Read the entire flow file before doing anything else, and follow its Steps 0–4 in order.");
+  L.push("2. The [objective] is external and operator-owned (Invariant 1): read it from the `objective path` below and **never invent, edit, \"fix\", relax, or write it** — I authored that YAML myself. If the path is missing or the objective fails the flow's Step-0 validation or a gate, halt and say so; do not adapt it.");
+  L.push("3. Create every subagent per the `subagent_model` header — the default `inherit` keeps subagents on the main agent's model with **no downgrade**; a specific model id overrides it. `subagent_effort` sets the subagent reasoning tier per `_lib/workflow_contract.md` §Subagent Launch Contract.");
+  L.push("4. Resolve the flow file for your platform (repo root): Claude Code / Codex → `robot_agentic_training_flow.md`; VS Code Copilot → `@/robot_agentic_training_flow.md`.");
+  L.push("");
+  L.push("`simplify` / `code_review` are the flow's opt-in post-run review headers (they run only if a round edited repo source files). See `_lib/review_skills.md`.");
+  L.push("");
+  L.push("## Requirements (operator preflight — confirm before running; NOT read by the controller)");
+  L.push("");
+  L.push("The environment the flow's train/eval commands assume is already in place. This is a checklist for you, the operator, and context for the agent — the controller does not parse it, and it is separate from the objective's own `workdir`.");
+  L.push("");
+  L.push("requirements:");
+  L.push("  - hardware: " + get("req_hardware", "<hardware>"));
+  L.push("  - runtime: " + get("req_runtime", "<runtime>"));
+  L.push("  - data: " + get("req_data", "<data>"));
+  L.push("  - storage / other: " + get("req_storage", "<storage / other>"));
+  L.push("");
+  L.push("## Objective (the only definition of success — flow Invariant 1; I own this file)");
+  L.push("");
+  L.push("objective path: " + get("objective_path", "<absolute path to the objective YAML I filled in from objective.example.yaml>"));
+  L.push("");
+  L.push("- I filled that YAML from the `objective.example.yaml` schema and **saved it myself** at the path above (this builder's \"Download objective.yaml\" produces it). The flow reads it from that path and never writes it.");
+  L.push("- Schema of the fields inside that file — **required:** `run_dir`, `metric_path`, `comparison` (one of `>=` `>` `<=` `<`), `target` (number), `eval_command` (`{checkpoint}`/`{eval_dir}` placeholders; first token `uv`/`python`/an `allowed_executables` entry; no `;`, backticks, `$()`, or background `&`; must write `{eval_dir}/eval_info.json` containing `metric_path`), `stagnation_rounds`. **Optional:** `min_delta`, `preflight_eval_command`, `workdir`, `allowed_executables`.");
+  L.push("");
+  L.push("## Starting state (optional — defaults to none; round 0 creates the train_dir)");
+  L.push("");
+  L.push("starting state: " + get("starting", "(none)"));
+  return L.join("\n") + "\n";
+}
+
+// --- Rendering ------------------------------------------------------------
+function renderPath(){
+  document.getElementById("resolvedPath").textContent = resolvePath(state.params.agent);
+}
+function renderPreviews(){
+  document.getElementById("promptPreview").textContent = buildPrompt();
+  document.getElementById("objectivePreview").textContent = buildObjectiveYaml();
+}
+function renderAll(){ renderPath(); renderPreviews(); }
+
+// --- Helpers --------------------------------------------------------------
+function autosize(ta){ ta.style.height = "auto"; ta.style.height = (ta.scrollHeight + 2) + "px"; }
+
+function toast(msg){
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ t.classList.remove("show"); }, 1600);
+}
+
+// Prefer the async Clipboard API only in a secure context where it exists (it is
+// absent on file://), else fall back to a temporary textarea + execCommand.
+async function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch(e){ /* fall through */ }
+  }
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly","");
+  ta.style.position = "fixed"; ta.style.top = "-9999px";
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, ta.value.length);
+  var ok = false;
+  try { ok = document.execCommand("copy"); } catch(e){ ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+function download(name, text, mime){
+  var blob = new Blob([text], { type: mime || "text/plain" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  // Revoke after a tick — revoking synchronously can race the download start.
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 0);
+}
+
+// --- Wiring ---------------------------------------------------------------
+function seedFieldsFromDom(){
+  // Prefill objective fields with the example values; requirements/optional stay blank.
+  var pre = {
+    run_dir: EX.run_dir, metric_path: EX.metric_path, target: EX.target,
+    stagnation_rounds: EX.stagnation_rounds, eval_command: EX.eval_command
+  };
+  Object.keys(pre).forEach(function(id){
+    var el = document.getElementById(id);
+    if(el){ el.value = pre[id]; state.f[id] = pre[id]; }
+  });
+  document.getElementById("comparison").value = EX.comparison;
+  state.f["comparison"] = EX.comparison;
+}
+
+function wireField(id){
+  var el = document.getElementById(id);
+  if(!el) return;
+  var handler = function(){
+    state.f[id] = el.value;
+    if(el.tagName === "TEXTAREA") autosize(el);
+    renderPreviews();
+  };
+  el.addEventListener("input", handler);
+  el.addEventListener("change", handler);
+  if(el.tagName === "TEXTAREA") autosize(el);
+}
+
+function setEffort(val){
+  var el = document.querySelector('input[name="effort"][value="' + val + '"]');
+  if(!el) return;
+  el.checked = true;
+  state.params.effort = val;
+}
+
+function wireParams(){
+  document.getElementById("seg-agent").addEventListener("change", function(e){
+    state.params.agent = e.target.value; renderPath(); renderPreviews();
+  });
+  document.getElementById("seg-model").addEventListener("change", function(e){
+    state.params.model = e.target.value;
+    document.getElementById("customModelWrap").classList.toggle("show", e.target.value === "__custom__");
+    if(e.target.value === "__custom__") document.getElementById("customModel").focus();
+    if(e.target.dataset.effort) setEffort(e.target.dataset.effort);
+    renderPreviews();
+  });
+  document.getElementById("customModel").addEventListener("input", function(e){
+    state.params.customModel = e.target.value; renderPreviews();
+  });
+  document.getElementById("seg-effort").addEventListener("change", function(e){
+    state.params.effort = e.target.value; renderPreviews();
+  });
+  document.getElementById("seg-simplify").addEventListener("change", function(e){
+    state.params.simplify = e.target.value; renderPreviews();
+  });
+  document.getElementById("seg-codereview").addEventListener("change", function(e){
+    state.params.code_review = e.target.value; renderPreviews();
+  });
+}
+
+function wireButtons(){
+  document.getElementById("btnCopyPrompt").addEventListener("click", async function(){
+    var ok = await copyText(buildPrompt());
+    toast(ok ? "Prompt copied" : "Press Ctrl/Cmd-C to copy");
+  });
+  document.getElementById("btnCopyObjective").addEventListener("click", async function(){
+    var ok = await copyText(buildObjectiveYaml());
+    toast(ok ? "objective.yaml copied" : "Press Ctrl/Cmd-C to copy");
+  });
+  document.getElementById("btnDlPrompt").addEventListener("click", function(){
+    download("robot_training_request.md", buildPrompt(), "text/markdown");
+  });
+  document.getElementById("btnDlObjective").addEventListener("click", function(){
+    download("objective.yaml", buildObjectiveYaml(), "text/yaml");
+  });
+}
+
+var FIELD_IDS = ["req_hardware","req_runtime","req_data","req_storage","objective_path",
+  "run_dir","metric_path","comparison","target","eval_command","stagnation_rounds",
+  "min_delta","workdir","preflight_eval_command","allowed_executables","starting"];
+
+seedFieldsFromDom();
+FIELD_IDS.forEach(wireField);
+wireParams();
+wireButtons();
+renderAll();
+</script>
+</body>
+</html>
