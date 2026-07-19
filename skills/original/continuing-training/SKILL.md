@@ -1,6 +1,6 @@
 ---
 name: continuing-training
-description: Start a fresh robot-policy training run or resume an existing one into the run's persistent train_dir with lerobot-train. Use when the metric is improving, when a fresh run is needed (round 1 or a deliberate restart), whenever a round's action set includes more training steps, or when changing hyperparameters (policy type, batch size, LR, steps).
+description: Start a fresh robot-policy training run or resume an existing one into the run's persistent train_dir, against whatever resumable trainer the objective points at. Use when the metric is improving, when a fresh run is needed (round 1 or a deliberate restart), whenever a round's action set includes more training steps, or when changing hyperparameters (policy type, batch size, LR, steps).
 metadata:
   lifecycle: validated
   safety: mutating
@@ -14,18 +14,18 @@ The metric is improving, or a fresh run is needed. This is the default "exploit"
 skill after a PROGRESS verdict.
 
 This skill also covers **hyperparameter changes** (formerly the separate
-`tuning-hyperparameters` skill): re-run with a different `--policy.type`,
-`--batch_size`, learning rate, or `--steps`. Read the LeRobot repo's
-`AGENT_GUIDE.md` §6 (which policy) and §7 (steps↔epochs, batch/LR-schedule
-guidance) — the repo's own priors — before guessing. A `--policy.type` switch
-means abandoning the current run: a *fresh* invocation into a new
-`<train_dir>` lineage, directed explicitly by the [round brief].
+`tuning-hyperparameters` skill): re-run with a different policy type, batch
+size, learning rate, or step count. Read the training backend's own guidance on
+which policy and on steps↔epochs / batch / LR-schedule — its priors beat a
+guess. A policy-type switch means abandoning the current run: a *fresh*
+invocation into a new `<train_dir>` lineage, directed explicitly by the
+[round brief].
 
 ## Prerequisites
 
 A [round brief] with an explicit fresh / resume / branch-from-champion
-directive; a dataset repo id (fresh) or an existing
-`<train_dir>/checkpoints/last` (resume).
+directive; a dataset identifier (fresh) or an existing resumable checkpoint
+(resume).
 
 ## Do
 
@@ -33,6 +33,24 @@ The loop carries one persistent variable, `<train_dir>` — the directory holdin
 the run's accumulating checkpoints. Step 1a creates it at round 0; every later
 round resumes **into the same one**. The controller's [round brief] tells you
 which mode this round uses — **fresh or resume is never your call as a worker**.
+
+Backend-independent contract, in order:
+
+1. **Fresh** creates `<train_dir>`; **resume** continues that same lineage from
+   its latest checkpoint. Never start a second lineage on a resume round.
+2. On resume, the *saved training config* — not the inference-time config — is
+   the source of truth for how the run is rebuilt. Any inference-only edit made
+   between rounds is silently reverted unless re-asserted on the command line.
+3. A resume must ask for **strictly more** total steps than the checkpoint
+   already has, or it trains nothing and exits successfully.
+4. Run the resume preflight below and refuse to launch until it passes.
+5. Verify the LR early against the preflight's prediction, and kill the run on
+   mismatch rather than burning the segment.
+
+### Reference backend (LeRobot / SmolVLA)
+
+For the hyperparameter priors, read the LeRobot repo's `AGENT_GUIDE.md` §6 (which
+policy) and §7 (steps↔epochs, batch/LR-schedule guidance) before guessing.
 
 ```bash
 # Fresh run. Only at round 0 (Step 1a), or when deliberately abandoning the run
@@ -53,10 +71,12 @@ uv run lerobot-train \
   --steps=<strictly greater than before>
 ```
 
-Before **every** resume, write
+**Resume preflight (every backend).** Before **every** resume, write
 `[run_dir]/round_<n>/evidence/resume_preflight.json` and do not launch training
-until it passes. Run the check with the same interpreter and LeRobot checkout as
-the train command:
+until it passes. Run the check with the same interpreter and backend checkout as
+the train command. The steps below name LeRobot's artifacts; on another backend
+substitute its equivalents (saved training config, step counter, scheduler and
+optimizer state) and keep the four assertions in step 4 unchanged:
 
 1. Load the saved `train_config.json` through
    `TrainPipelineConfig.from_pretrained(config_path, cli_args=<the exact resume
@@ -127,6 +147,8 @@ the end-of-schedule checkpoint. (Early reads are still worth taking — just rea
 "is it diverging?", never as "is it better?".)
 
 - **A resume reverts inference-only config edits.** `train_config.json` — not `pretrained_model/config.json` — is the source of truth on resume. Any `n_action_steps` change made by `tuning-action-horizon` is discarded and the OLD value is stamped into every new checkpoint. Re-assert it on the resume command line (`--policy.n_action_steps=<value>`) and assert it in `resume_preflight.json`.
+
+### Reference-backend traps (LeRobot) — three that each cost real GPU-hours
 
 Re-running the *fresh* command each round throws away every prior checkpoint
 while still looking like a well-logged "continue training" round. On rounds 1+

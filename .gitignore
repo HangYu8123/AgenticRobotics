@@ -34,3 +34,9 @@ coverage.xml
 # Local environment / secrets
 .env
 .env.*
+
+.github/
+
+# HarnessFlow-generated root entry points (machine-local absolute paths — do not commit)
+/CLAUDE.md
+/AGENTS.md

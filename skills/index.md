@@ -25,7 +25,7 @@ picks based on last round's verdict:
 |---|---|
 | PROGRESS | Exploit: `continuing-training` (more steps, or re-parameterized — policy type/batch/LR) |
 | NO PROGRESS (below `stagnation_rounds`) | `tuning-action-horizon` (cheapest first — config-only), `continuing-training` (re-parameterized), `curating-dataset` |
-| NO PROGRESS (at `stagnation_rounds`) | **Switch strategy class** — `diagnosing-qualitatively`, `collecting-data`, `researching-online`. An action-selection interrupt, never a termination condition (flow Invariant 2) |
+| NO PROGRESS (at `stagnation_rounds`) | **Switch strategy class** — `diagnosing-qualitatively`, `collecting-data`, `harvesting-rollouts` (self-generate more data), `researching-online` (sweep mode, to find a method the library does not have yet); and when the ceiling is the demo distribution itself, RL: `reinforcing-with-rl` for a token-based policy, `conditioning-on-advantage` for a flow-matching one (SmolVLA, pi0). An action-selection interrupt, never a termination condition (flow Invariant 2) |
 | REGRESSION | `diagnosing-qualitatively` first, to confirm it is real (a [delta] beyond the [noise band], not eval noise); then `reverting-to-champion` — branch the next training round from the champion in the run's durable `score_state` (mirrored in the derived `[run_dir]/CHAMPION` pointer) instead of continuing to exploit a damaged `last` |
 | ERROR | Fix the measurement. Do not touch the policy. |
 
@@ -37,8 +37,18 @@ earned it; isolate one skill in its own round when the goal is to learn what wor
 ## Skills
 
 Workers execute a skill by reading its `SKILL.md` and following it with the
-values from the controller's [round brief]. All commands run against the external
-LeRobot repo, prefixed `uv run`.
+values from the controller's [round brief].
+
+**Backend portability.** The loop is backend-agnostic (flow file, *Backend
+independence*): the contract is a resumable trainer plus an `eval_command` that
+writes `eval_info.json`. So a skill that touches the backend is written in two
+layers — a backend-independent `## Do` stating the contract and the order of
+operations, then a `### Reference backend (LeRobot / SmolVLA / LIBERO)`
+subsection with the verbatim commands and the traps they cost us. Read the layer
+you need: on the reference backend, the commands are still right there. Traps
+that are genuinely backend-specific (LeRobot's scheduler clamp, LIBERO's
+`task_id` ordering) stay labeled as such rather than being generalized into
+claims about backends nobody here has run.
 
 The skill directories are grouped on disk into two subfolders (this index and
 `LIBRARY.lock` stay at the `skills/` root):
@@ -75,6 +85,10 @@ subfolder just mirrors it. New skills created during a round go in `iterated/`.
 | [`correcting-subtask-stalls`](iterated/correcting-subtask-stalls/SKILL.md) | Test-time levers (chunk-staleness, subtask replan/backtrack triggers) for diagnosed sequencing stalls in long-horizon evals — measured failure: place object 1, never start object 2 | offline 2026-07-15 (verified external research) | candidate |
 | [`evicting-hf-dataset-caches`](iterated/evicting-hf-dataset-caches/SKILL.md) | Free disk by deleting lsof-verified-unheld regenerable HF datasets builder caches before a training launch | round 1 (run _70_002) | candidate |
 | [`souping-task-vectors`](iterated/souping-task-vectors/SKILL.md) | Interpolate a regressed fine-tune's task vector into the champion (keep gains, cancel forgetting) | round 2 (run _70_002) | candidate |
+| [`harvesting-rollouts`](iterated/harvesting-rollouts/SKILL.md) | Autonomously roll out the current policy to self-generate new trajectories + reward labels into the dataset (no teleop); label or file for labeling when no env reward | offline 2026-07-19 | candidate |
+| [`reinforcing-with-rl`](iterated/reinforcing-with-rl/SKILL.md) | RL-fine-tune the policy against an env/reward to improve beyond the demonstration distribution (new-behavior discovery) when SFT/config levers have stalled; carries the cited recipe table keyed on policy class | offline 2026-07-19 | candidate |
+| [`conditioning-on-advantage`](iterated/conditioning-on-advantage/SKILL.md) | RECAP-style advantage-conditioned RL for **flow-matching / diffusion** policies (SmolVLA, pi0), which expose no action log-probs for PPO/GRPO | offline 2026-07-19 | candidate |
+| [`synthesizing-skills-from-rollouts`](iterated/synthesizing-skills-from-rollouts/SKILL.md) | Mine ≥5 completed rounds of the ledger and evidence envelopes for cross-round procedures and traps no single round registered; returns proposals only | offline 2026-07-19 | candidate |
 
 `Origin` is the option id each skill carried in the retired `OPTIONS.md` registry;
 for a vendored skill, its upstream source; for a skill added outside a round, when
@@ -87,8 +101,12 @@ construction — every round's Measure step exercises it; `skill-creator` is
 upstream-tested vendored tooling, so its lifecycle lives in this row only and its
 vendored body is never edited); **deprecated** = kept for the record — do not
 reach for it. Prefer a `validated` skill when several fit; a `candidate` costs
-the same to run but its `Evidence` is thinner. Transitions happen at flow
-Step 3h, driven by measured evidence, never by claim.
+the same to run but its `Evidence` is thinner — **subject to the `evidence_tier`
+gate below**, which is the stricter of the two ladders and the one that governs
+unattended selection. The two can disagree: a skill can reach `validated` on three
+bundled rounds while its `evidence_tier` is still `candidate` because it never ran
+isolated. When they disagree, `evidence_tier` wins for selection. Transitions
+happen at flow Step 3h, driven by measured evidence, never by claim.
 
 ## Evidence tiers (how strong is "validated"?)
 
@@ -205,6 +223,19 @@ The library grows every run; keep it usable.
   with a real round moves `candidate → validated` (`metadata.lifecycle` in its
   frontmatter + this index's Lifecycle column); append the round's outcome to
   its `Evidence` either way.
+- **Numeric thresholds for the lifecycle transitions**, so promotion is not a
+  judgment call (adopted from RATs, arXiv 2606.19419, the only published
+  auto-synthesis system with an explicit reusable rule):
+  - `candidate → validated` — used in **≥3 rounds with ≥50% of them improving**.
+  - `→ deprecated` — used in **≥10 rounds with ≤20% of them improving**. Hide it
+    from the routing table above; never delete it.
+  - Between those bars a skill stays where it is. These count *rounds where the
+    skill ran*, bundled or isolated; `evidence_tier` (below) is the stricter,
+    isolation-aware ladder and is what gates unattended selection.
+- **Curate on a cadence, not only on registration.** Every ~5 rounds, re-read this
+  index for near-duplicates and merge them. Registration-time duplicate detection
+  catches an obvious re-registration; it does not catch three narrow skills that
+  drifted together over ten rounds.
 - **Never delete a failed skill — deprecate it.** Set `metadata.lifecycle:
   deprecated` in its frontmatter and this index, add `**Deprecated:** <one-line reason>` at the
   top of its body, and leave it in place. Deleting it invites a future round to

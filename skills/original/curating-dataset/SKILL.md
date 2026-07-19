@@ -20,6 +20,14 @@ dir before any destructive operation.
 
 ## Do
 
+Backend-independent contract: four operations, in increasing order of risk —
+**view** an episode, **restrict** training to a subset of episodes (config-only,
+mutates nothing), **edit** the dataset in place (delete/split/merge/relabel), and
+**re-stat** derived metadata after an edit. Prefer restriction over editing: it
+gets most of the effect and is fully reversible.
+
+### Reference backend (LeRobot / SmolVLA)
+
 ```bash
 # look at an episode
 uv run lerobot-dataset-viz --repo-id <user/dataset> --episode-index 0

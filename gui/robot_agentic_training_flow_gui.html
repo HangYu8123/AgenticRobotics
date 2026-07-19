@@ -42,7 +42,7 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;font-size:15px}
-  .wrap{max-width:1080px;margin:0 auto;padding:24px 18px 64px}
+  .wrap{max-width:1400px;margin:0 auto;padding:24px 18px 64px}
   header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-bottom:6px}
   header.top h1{font-size:22px;margin:0;letter-spacing:.2px}
   header.top .sub{color:var(--muted);font-size:13px}
@@ -240,11 +240,6 @@
         </div>
       </div>
 
-      <div class="field">
-        <label for="eval_command"><span class="req">eval_command</span> <span class="sub">run verbatim every round · {checkpoint} / {eval_dir} placeholders · must write {eval_dir}/eval_info.json containing metric_path</span></label>
-        <textarea id="eval_command" rows="6"></textarea>
-      </div>
-
       <div class="field" style="max-width:220px">
         <label for="stagnation_rounds"><span class="req">stagnation_rounds</span></label>
         <input type="number" id="stagnation_rounds" min="1" step="1">
@@ -321,14 +316,6 @@ var EX = {
   comparison: ">=",
   target: "80.0",
   stagnation_rounds: "2",
-  eval_command:
-    "uv run lerobot-eval \\\n" +
-    "  --policy.path={checkpoint} \\\n" +
-    "  --env.type=pusht \\\n" +
-    "  --eval.n_episodes=50 \\\n" +
-    "  --eval.batch_size=10 \\\n" +
-    "  --policy.device=cuda \\\n" +
-    "  --output_dir={eval_dir}"
 };
 
 // --- UI state -------------------------------------------------------------
@@ -397,7 +384,6 @@ function buildObjectiveYaml(){
   out.push("metric_path: " + yamlScalar(get("metric_path", EX.metric_path)));
   out.push("comparison: " + yamlScalar(get("comparison", EX.comparison)));
   out.push("target: " + yamlNum(get("target", EX.target)));
-  out.push(yamlBlock("eval_command", get("eval_command", EX.eval_command)).replace(/\n$/, ""));
   out.push("stagnation_rounds: " + yamlNum(get("stagnation_rounds", EX.stagnation_rounds)));
 
   var opt = [];
@@ -512,7 +498,7 @@ function seedFieldsFromDom(){
   // Prefill objective fields with the example values; requirements/optional stay blank.
   var pre = {
     run_dir: EX.run_dir, metric_path: EX.metric_path, target: EX.target,
-    stagnation_rounds: EX.stagnation_rounds, eval_command: EX.eval_command
+    stagnation_rounds: EX.stagnation_rounds
   };
   Object.keys(pre).forEach(function(id){
     var el = document.getElementById(id);
@@ -585,7 +571,7 @@ function wireButtons(){
 }
 
 var FIELD_IDS = ["req_hardware","req_runtime","req_data","req_storage","objective_path",
-  "run_dir","metric_path","comparison","target","eval_command","stagnation_rounds",
+  "run_dir","metric_path","comparison","target","stagnation_rounds",
   "min_delta","workdir","preflight_eval_command","allowed_executables","starting"];
 
 seedFieldsFromDom();

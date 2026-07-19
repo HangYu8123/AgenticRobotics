@@ -21,6 +21,10 @@ flow's [command preflight] (Step 0).
 ## Do
 
 Run the objective spec's `eval_command` verbatim. Never a hand-rolled variant.
+The command's backend is whatever the objective points at; the skill is the same
+for all of them, because the contract is the same for all of them.
+
+### Reference backend (LeRobot / LIBERO)
 
 ```bash
 uv run lerobot-eval \
@@ -76,6 +80,17 @@ None — reversible.
   `env_eval_freq` in lerobot v0.6.0) runs only when a sim `cfg.env` is configured — not a
   measurement shortcut for real-robot data. All of these are objective (operator) changes:
   mid-run edits trip the integrity gate.
+
+- **A benchmark number is not a capability claim — and LIBERO is one of the weaker benchmarks on
+  this axis.** The 2026 audit "What Are We Actually Benchmarking in Robot Manipulation?"
+  (arXiv 2606.04233) found that **only 19.8% of LIBERO SOTA claims are provably significant**, that
+  a **0.09B probe with no language encoder and no robotics pretraining** scores 99.0/100.0/98.8/92.4
+  on LIBERO Spatial/Object/Goal/Long — at or above most published VLA numbers — and that LIBERO,
+  CALVIN, and SimplerEnv each fail several of its four diagnostics (shortcut solvability,
+  statistical significance, creeping overfitting, data-source dependence) while RoboTwin 2.0 and
+  RoboCasa fare better. This is *why* the flow spends rounds on a [noise band], a confirmation
+  protocol, and a locked [acceptance gate] instead of trusting one aggregate number. It is also why
+  a high `pc_success` on LIBERO alone should never be reported as a capability result.
 
 - **LIBERO: `eval_info.json` `task_id` follows the LIBERO benchmark's own suite order, NOT the HF dataset's `task_index`.** Resolve names via `libero.libero.benchmark.get_benchmark_dict()['<suite>']().get_task(i)` — never by the dataset's task table, or a diagnosis will chase the wrong tasks (this happened; it cost a round's analysis).
 - **LIBERO reward is sparse and terminal**: `sum_rewards == max_rewards` is binary, and `eval_info.json` carries no sub-task progress. Any long-horizon (multi-stage) diagnosis must come from the rollout VIDEOS, not the JSON.

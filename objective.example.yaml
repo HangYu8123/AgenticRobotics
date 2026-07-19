@@ -159,6 +159,11 @@ stagnation_rounds: 2
 # matrix) are external; point `acceptance_eval.eval_command` at whichever you run —
 # this repo references them rather than vendoring their (GPU/container) weight.
 
+# ENFORCED AT EXIT: when acceptance_eval + acceptance are set, robot_agentic_training_flow.md
+# Step 4's [acceptance gate] makes them PART of the exit condition — the run does not exit until
+# BOTH the selection metric (eval_command) AND this locked vector pass. Leave the two fields unset
+# and nothing changes: the gate is vacuously true and exit is the selection metric alone.
+#
 # A metric VECTOR the acceptance gate must satisfy — not a single scalar. Each
 # metric is a dotted path into the acceptance eval's eval_info.json.
 # acceptance:

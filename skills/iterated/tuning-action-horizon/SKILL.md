@@ -9,19 +9,22 @@ metadata:
 # Shrink the inference action horizon
 
 ## Prerequisites
-A checkpoint's `pretrained_model/config.json` with `n_action_steps` < `chunk_size` (room to shrink); the objective's eval_command.
+A chunked-action checkpoint whose *executed* horizon is smaller than its *predicted* chunk (room to shrink), and the objective's eval_command. Action chunking is a VLA-general design — ACT, Diffusion Policy, SmolVLA, pi0, and OpenVLA-OFT all predict a chunk and execute a prefix of it — so this lever exists on any of them under whatever name that backend gives the two numbers.
 
 ## Do
-Record the current `n_action_steps` value (config.json is its only copy), then edit `<checkpoint>/pretrained_model/config.json` field `n_action_steps` (e.g. 50→10; must stay <= chunk_size; weights untouched), then re-run the objective's eval_command verbatim.
+Backend-independent contract: the policy predicts `chunk_size` actions and executes the first `n_action_steps` of them before re-observing. Shrinking the executed prefix trades inference cost for closed-loop responsiveness, **without touching weights**. So: record the current value (find where the inference-time config actually lives — it is usually a single copy), lower it (e.g. 50→10, never above `chunk_size`), then re-run the objective's eval_command verbatim.
+
+### Reference backend (LeRobot / SmolVLA)
+Edit `<checkpoint>/pretrained_model/config.json`, field `n_action_steps`.
 
 ## Mutates
-One checkpoint config.json field (`n_action_steps`) — weights untouched.
+One inference-time config field — weights untouched. On the reference backend: `pretrained_model/config.json`'s `n_action_steps`.
 
 ## Validation
-eval_info.json regenerates; the dumped eval config shows the new n_action_steps.
+eval_info.json regenerates; the dumped eval config shows the new horizon.
 
 ## Rollback
-Restore the previous value in config.json.
+Restore the previous value. Keep the backup **outside** the checkpoint dir (e.g. the round evidence dir).
 
 ## Watch out
 Horizon-10 eval makes ~5x more policy calls (round-2 eval 22→30 min). **The edit does NOT ride along into a resume — it is silently REVERTED.** `pretrained_model/config.json` is read by *eval*; `pretrained_model/train_config.json` is read by `--resume=true`, and it still carries the ORIGINAL `n_action_steps`. LeRobot rebuilds the policy from train_config (`configs/train.py` resume branch -> `policies/factory.py`: the train_config-derived config wins over the saved config.json), and `save_checkpoint` then stamps that value into every NEW checkpoint's config.json. So a resume after this edit trains and saves at the OLD horizon, and the next eval silently loses the lever. **Every resume must re-assert it: `--policy.n_action_steps=<value>`** (verified to stick). With a fixed-seed deterministic eval, this cheap config probe is the right first lever, because only a >noise-band jump can score PROGRESS.
