@@ -40,3 +40,6 @@ coverage.xml
 # HarnessFlow-generated root entry points (machine-local absolute paths — do not commit)
 /CLAUDE.md
 /AGENTS.md
+
+# Locally cloned external repo (microsoft/ResearchStudio) — not part of this project
+/ResearchStudio/
