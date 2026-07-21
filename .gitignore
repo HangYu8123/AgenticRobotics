@@ -41,5 +41,7 @@ coverage.xml
 /CLAUDE.md
 /AGENTS.md
 
+logs/
+
 # Locally cloned external repo (microsoft/ResearchStudio) — not part of this project
 /ResearchStudio/

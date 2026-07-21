@@ -107,6 +107,11 @@ stagnation_rounds: 2
 # REPLACES the loop's computed noise band (a two-sample 95% interval on the
 # delta). Leave unset to let the loop compute the band from each eval's own
 # episode count.
+# SET IT ABOVE your eval's measured same-checkpoint (test-retest) spread, not
+# equal to it: re-run eval_command twice on the *same* checkpoint and pick a
+# min_delta comfortably larger than the gap you see. A delta merely equal to
+# min_delta is a coin flip; the loop promotes outright only past a 1.5x margin
+# (>= 1.5 * min_delta) and otherwise demands a confirmation eval before promoting.
 # NOTE for deterministic evals: with a fixed seed set the confirmation eval is
 # identical by construction, so the loop switches to a paired per-episode test
 # (McNemar / paired bootstrap). If your eval_command's output has NO per-episode
